@@ -1,0 +1,34 @@
+{
+  "manifest_version": 3,
+  "name": "Smart Stay ASSD Operations Hub",
+  "version": "1.0",
+  "description": "Real-time analytics and automated housekeeping sheet for ASSD PMS.",
+  "permissions": [
+    "storage",
+    "activeTab"
+  ],
+  "host_permissions": [
+    "https://pms3.assd.com/*",
+    "file://*/*"
+  ],
+  "action": {
+    "default_title": "Open Operations Dashboard",
+    "default_popup": "dashboard.html"
+  },
+  "content_scripts": [
+    {
+      "matches": [
+        "https://pms3.assd.com/*",
+        "file://*/*"
+      ],
+      "js": ["content.js"],
+      "run_at": "document_idle"
+    }
+  ],
+  "web_accessible_resources": [
+    {
+      "resources": ["dashboard.html", "dashboard.js", "chart.umd.js"],
+      "matches": ["https://pms3.assd.com/*", "file://*/*"]
+    }
+  ]
+}

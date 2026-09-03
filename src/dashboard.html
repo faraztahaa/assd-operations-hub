@@ -1,0 +1,297 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Smart Stay Reception Hub</title>
+  <script src="chart.umd.js"></script>
+  <style>
+    :root {
+      --primary-teal: #0d9488;
+      --teal-dark: #0f766e;
+      --bg-slate: #f8fafc;
+      --card-bg: #ffffff;
+      --text-main: #0f172a;
+      --text-muted: #64748b;
+      --border-color: #e2e8f0;
+
+      --blue: #2563eb;
+      --amber: #d97706;
+      --rose: #e11d48;
+      --emerald: #059669;
+    }
+
+    * { box-sizing: border-box; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      margin: 0;
+      background: var(--bg-slate);
+      color: var(--text-main);
+      padding-bottom: 30px;
+    }
+
+    /* TOP BAR */
+    .top-bar {
+      background: #008080;
+      color: white;
+      padding: 14px 28px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      box-shadow: 0 2px 4px rgba(0,0,0,0.06);
+    }
+    .brand-title { font-size: 19px; font-weight: 700; letter-spacing: 0.5px; }
+    .sync-badge { font-size: 11px; background: rgba(255,255,255,0.2); padding: 5px 12px; border-radius: 20px; }
+
+    .main-container {
+      max-width: 1200px;
+      margin: 24px auto;
+      padding: 0 20px;
+    }
+
+    /* DATE STRIP */
+    .date-strip {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      background: white;
+      padding: 14px 20px;
+      border-radius: 10px;
+      border: 1px solid var(--border-color);
+      margin-bottom: 20px;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.02);
+    }
+    .date-buttons { display: flex; gap: 8px; }
+    .date-btn {
+      background: var(--bg-slate);
+      border: 1px solid var(--border-color);
+      padding: 7px 15px;
+      border-radius: 6px;
+      font-size: 13px;
+      font-weight: 600;
+      cursor: pointer;
+      color: var(--text-muted);
+      transition: all 0.15s;
+    }
+    .date-btn.active {
+      background: #008080;
+      color: white;
+      border-color: #008080;
+    }
+
+    /* 4 KPI METRIC CARDS */
+    .kpi-row {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 16px;
+      margin-bottom: 24px;
+    }
+    .kpi-card {
+      background: white;
+      border-radius: 10px;
+      padding: 20px;
+      border: 1px solid var(--border-color);
+      display: flex;
+      align-items: center;
+      gap: 16px;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.02);
+    }
+    .kpi-card.blue { border-left: 5px solid var(--blue); }
+    .kpi-card.rose { border-left: 5px solid var(--rose); }
+    .kpi-card.amber { border-left: 5px solid var(--amber); }
+    .kpi-card.teal { border-left: 5px solid #008080; }
+
+    .kpi-icon {
+      font-size: 28px;
+      width: 52px;
+      height: 52px;
+      border-radius: 10px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+    .blue .kpi-icon { background: #eff6ff; }
+    .rose .kpi-icon { background: #fff1f2; }
+    .amber .kpi-icon { background: #fffbeb; }
+    .teal .kpi-icon { background: #f0fdfa; }
+
+    .kpi-info .kpi-label { font-size: 11px; text-transform: uppercase; font-weight: 700; color: var(--text-muted); }
+    .kpi-info .kpi-val { font-size: 32px; font-weight: 800; line-height: 1.1; margin-top: 2px; }
+    .kpi-sub { font-size: 12px; color: var(--text-muted); margin-top: 4px; }
+
+    /* OCCUPANCY FORECAST GRAPH (HERO) */
+    .chart-card {
+      background: white;
+      border-radius: 10px;
+      border: 1px solid var(--border-color);
+      padding: 22px 24px;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.02);
+      margin-bottom: 24px;
+    }
+    .chart-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 16px;
+    }
+    .chart-title { font-size: 16px; font-weight: 700; color: var(--text-main); }
+    .chart-summary-tag { font-size: 12px; color: var(--text-muted); font-weight: 500; }
+
+    /* TOGGLEABLE SECONDARY DETAILS ACCORDION */
+    .details-toggle-container {
+      text-align: center;
+      margin-top: 10px;
+    }
+    .toggle-btn {
+      background: white;
+      border: 1px solid var(--border-color);
+      padding: 10px 20px;
+      border-radius: 25px;
+      cursor: pointer;
+      font-size: 13px;
+      font-weight: 600;
+      color: var(--text-muted);
+      transition: all 0.2s;
+      box-shadow: 0 1px 2px rgba(0,0,0,0.03);
+    }
+    .toggle-btn:hover {
+      border-color: #008080;
+      color: #008080;
+    }
+
+    .detail-drawer {
+      display: none;
+      margin-top: 20px;
+      background: white;
+      border-radius: 10px;
+      border: 1px solid var(--border-color);
+      overflow: hidden;
+    }
+    .detail-drawer.open { display: block; }
+
+    .drawer-header {
+      background: #fafafa;
+      padding: 14px 20px;
+      border-bottom: 1px solid var(--border-color);
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    table { width: 100%; border-collapse: collapse; }
+    th, td { padding: 10px 18px; text-align: left; font-size: 13px; border-bottom: 1px solid var(--border-color); }
+    th { background: #f8fafc; color: var(--text-muted); font-size: 11px; text-transform: uppercase; }
+
+    .pill {
+      display: inline-block;
+      padding: 3px 8px;
+      border-radius: 12px;
+      font-size: 11px;
+      font-weight: 700;
+    }
+    .pill-checkedin { background: #dcfce7; color: #15803d; }
+    .pill-pending { background: #fef9c3; color: #854d0e; }
+    .pill-checkedout { background: #f1f5f9; color: #64748b; text-decoration: line-through; }
+
+    @media print {
+      body { background: white; padding: 0; }
+      .top-bar, .date-strip, .chart-card, .details-toggle-container { display: none !important; }
+      .detail-drawer { display: block !important; border: none; }
+      th, td { border: 1px solid #ccc; font-size: 11px; }
+    }
+  </style>
+</head>
+<body>
+
+  <div class="top-bar">
+    <div class="brand-title">🏨 SMART STAY OPERATIONS</div>
+    <div class="sync-badge" id="sync-status">Connecting to ASSD storage...</div>
+  </div>
+
+  <div class="main-container">
+
+    <!-- DATE SELECTOR -->
+    <div class="date-strip">
+      <div style="font-weight: 700; font-size: 15px;" id="current-day-label">Selected Date</div>
+      <div class="date-buttons" id="date-buttons"></div>
+    </div>
+
+    <!-- 4 CORE EXECUTIVE METRIC CARDS -->
+    <div class="kpi-row">
+      <div class="kpi-card blue">
+        <div class="kpi-icon">🧳</div>
+        <div class="kpi-info">
+          <div class="kpi-label">Arrivals (Anreise)</div>
+          <div class="kpi-val" id="kpi-arrivals">0</div>
+          <div class="kpi-sub" id="kpi-arrivals-sub">0 Pending | 0 In</div>
+        </div>
+      </div>
+
+      <div class="kpi-card rose">
+        <div class="kpi-icon">🚪</div>
+        <div class="kpi-info">
+          <div class="kpi-label">Departures (Abreise)</div>
+          <div class="kpi-val" id="kpi-departures">0</div>
+          <div class="kpi-sub" id="kpi-departures-sub">0 Pending | 0 Out</div>
+        </div>
+      </div>
+
+      <div class="kpi-card amber">
+        <div class="kpi-icon">🛌</div>
+        <div class="kpi-info">
+          <div class="kpi-label">In-House (Bleibe)</div>
+          <div class="kpi-val" id="kpi-stayovers">0</div>
+          <div class="kpi-sub">Total Stayovers</div>
+        </div>
+      </div>
+
+      <div class="kpi-card teal">
+        <div class="kpi-icon">📊</div>
+        <div class="kpi-info">
+          <div class="kpi-label">Occupancy / Free</div>
+          <div class="kpi-val" id="kpi-occupancy">0%</div>
+          <div class="kpi-sub" id="kpi-free-rooms">0 Rooms Free</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 7-DAY OCCUPANCY TREND GRAPH -->
+    <div class="chart-card">
+      <div class="chart-header">
+        <div class="chart-title">📈 7-Day Occupancy Forecast</div>
+        <div class="chart-summary-tag">Live projection from ASSD</div>
+      </div>
+      <div style="height: 280px; width: 100%;">
+        <canvas id="occupancyChart"></canvas>
+      </div>
+    </div>
+
+    <!-- OPTIONAL SECONDARY DETAILS TOGGLE -->
+    <div class="details-toggle-container">
+      <button class="toggle-btn" id="btn-toggle-drawer">📋 Show Room Breakdown & Housekeeping Sheet</button>
+    </div>
+
+    <div class="detail-drawer" id="detail-drawer">
+      <div class="drawer-header">
+        <strong>Detailed Housekeeping & Guest List</strong>
+        <button id="btn-print" style="background: #0f172a; color: white; border: none; padding: 6px 14px; border-radius: 6px; font-size: 12px; cursor: pointer;">🖨️ Print Sheet</button>
+      </div>
+      <table>
+        <thead>
+          <tr>
+            <th>Room</th>
+            <th>Floor</th>
+            <th>Type</th>
+            <th>Status</th>
+            <th>Task</th>
+            <th>Guest</th>
+          </tr>
+        </thead>
+        <tbody id="drawer-table-body"></tbody>
+      </table>
+    </div>
+
+  </div>
+
+  <script src="dashboard.js"></script>
+</body>
+</html>
