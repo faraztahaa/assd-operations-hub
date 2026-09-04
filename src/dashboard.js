@@ -1,10 +1,10 @@
-// --- 1. PARSER: TIMELINE & CHECKIN STATE ---
+// --- 1. PARSER: TIMELINE & CHECK-IN STATE ---
 function parseAssdCalendar(htmlString) {
   const parser = new DOMParser();
   const doc = parser.parseFromString(htmlString, 'text/html');
 
   const headerSpans = doc.querySelectorAll('thead th span[date]');
-  const dateColumns = Array.from(headerSpans).map(span => span.getAttribute('date'));
+  const dateColumns = Array.from(headerSpans).map(span => span.getAttribute('date') || span.textContent.trim());
 
   const roomRows = doc.querySelectorAll('tbody tr[room]');
   const roomTimelines = [];
@@ -27,7 +27,20 @@ function parseAssdCalendar(htmlString) {
       const guestText = bookingDiv?.querySelector('span')?.textContent.trim() || '';
 
       if (!isVacant && (bookingDiv || guestText)) {
-        const divStyle = bookingDiv?.getAttribute('style') || '';
+        const divStyle = (bookingDiv?.getAttribute('style') || '').toLowerCase();
+        const divClass = (bookingDiv?.getAttribute('class') || '').toLowerCase();
+
+        // 1. Blocked room detection (Black color #000000 / rgb(0,0,0) or Sperre)
+        const isBlocked = divStyle.includes('#000000') || 
+                          divStyle.includes('rgb(0, 0, 0)') || 
+                          divStyle.includes('background: black') ||
+                          divClass.includes('sperr');
+
+        // 2. Continued Bleibe on Day 1 (ASSD injects .l-zigzag)
+        const hasZigzag = cell.querySelector('.l-zigzag') !== null;
+        const isContinuedFromPast = (dateIdx === 0 && hasZigzag);
+
+        // 3. Status checks
         const isUnderlined = divStyle.includes('underline') || bookingDiv?.querySelector('u') !== null;
         const isStrikethrough = divStyle.includes('line-through') || bookingDiv?.querySelector('s, del, strike') !== null;
 
@@ -37,8 +50,10 @@ function parseAssdCalendar(htmlString) {
 
         bookings.push({
           guest: guestText,
+          isBlocked: isBlocked,
+          isContinuedFromPast: isContinuedFromPast,
           checkInState: checkInState,
-          startNightIdx: dateIdx,
+          startNightIdx: isContinuedFromPast ? -1 : dateIdx,
           endNightIdx: dateIdx + colSpan - 1
         });
       }
@@ -58,7 +73,7 @@ function parseAssdCalendar(htmlString) {
   return { dates: dateColumns, rooms: roomTimelines };
 }
 
-// --- 2. SUMMARY & GERMAN HOUSEKEEPING TERMINOLOGY ---
+// --- 2. SUMMARY CALCULATIONS & OPERATION CLASSIFICATION ---
 function getOperationsDataForDate(roomTimelines, targetDate) {
   const allDates = globalParsedData.dates;
   const targetIdx = allDates.indexOf(targetDate);
@@ -74,15 +89,29 @@ function getOperationsDataForDate(roomTimelines, targetDate) {
     occupancyPct: 0
   };
 
+  if (targetIdx === -1) return data;
+
   roomTimelines.forEach(room => {
     if (room.floor) data.floors.add(room.floor);
 
+    // 1. Departures
     const departedBooking = prevDateIdx >= 0 
       ? room.bookings.find(b => b.endNightIdx === prevDateIdx) 
       : null;
 
-    const arrivingBooking = room.bookings.find(b => b.startNightIdx === targetIdx);
-    const stayoverBooking = room.bookings.find(b => b.startNightIdx < targetIdx && b.endNightIdx >= targetIdx);
+    // 2. Arriving on this target date
+    const arrivingBooking = room.bookings.find(b => b.startNightIdx === targetIdx && !b.isBlocked);
+
+    // 3. Stayovers (Bleibe)
+    // If Day 1, treat continued bookings (startNightIdx === -1) as stayovers
+    const stayoverBooking = room.bookings.find(b => {
+      if (b.isBlocked) return false;
+      if (b.startNightIdx < targetIdx && b.endNightIdx >= targetIdx) return true;
+      return false;
+    });
+
+    // 4. Blocked rooms
+    const blockedBooking = room.bookings.find(b => b.startNightIdx <= targetIdx && b.endNightIdx >= targetIdx && b.isBlocked);
 
     if (arrivingBooking) {
       data.arrivals.push({
@@ -92,7 +121,7 @@ function getOperationsDataForDate(roomTimelines, targetDate) {
       });
     }
 
-    if (departedBooking) {
+    if (departedBooking && !departedBooking.isBlocked) {
       data.departures.push({
         room: room.roomNumber,
         guest: departedBooking.guest,
@@ -110,7 +139,11 @@ function getOperationsDataForDate(roomTimelines, targetDate) {
     let badgeClass = 'badge-LEER';
     let isTurnover = false;
 
-    if (departedBooking && arrivingBooking) {
+    if (blockedBooking) {
+      hkStatus = 'GESPERRT';
+      hkTask = 'Zimmersperre / Defekt';
+      badgeClass = 'badge-LEER';
+    } else if (departedBooking && arrivingBooking) {
       hkStatus = 'Abreise + Anreise';
       hkTask = 'Abreisereinigung (Dringend)';
       badgeClass = 'badge-TURNOVER';
@@ -123,7 +156,7 @@ function getOperationsDataForDate(roomTimelines, targetDate) {
       hkStatus = 'Bleibe';
       hkTask = 'Bleibereinigung';
       badgeClass = 'badge-BLEIBE';
-    } else if (arrivingBooking && !departedBooking) {
+    } else if (arrivingBooking) {
       hkStatus = 'Anreise';
       hkTask = 'Zimmerkontrolle';
       badgeClass = 'badge-ANREISE';
@@ -141,14 +174,13 @@ function getOperationsDataForDate(roomTimelines, targetDate) {
       badgeClass: badgeClass,
       task: hkTask,
       isTurnover: isTurnover,
-      guest: arrivingBooking?.guest || stayoverBooking?.guest || departedBooking?.guest || ''
+      guest: blockedBooking?.guest || arrivingBooking?.guest || stayoverBooking?.guest || departedBooking?.guest || ''
     });
   });
 
   const occupied = data.arrivals.length + data.stayovers.length;
   data.occupancyPct = data.totalRooms > 0 ? Math.round((occupied / data.totalRooms) * 100) : 0;
 
-  // Natural numeric room sorting (Floor, then Room)
   data.housekeeping.sort((a, b) => {
     if (a.floor !== b.floor) return a.floor.localeCompare(b.floor, undefined, { numeric: true });
     return a.room.localeCompare(b.room, undefined, { numeric: true });
@@ -181,14 +213,14 @@ function renderDashboard(date) {
   document.getElementById('kpi-stayovers').textContent = opData.stayovers.length;
   document.getElementById('kpi-occupancy').textContent = `${opData.occupancyPct}%`;
 
-  const freeRooms = opData.totalRooms - (opData.arrivals.length + opData.stayovers.length);
+  const freeRooms = Math.max(0, opData.totalRooms - (opData.arrivals.length + opData.stayovers.length));
   document.getElementById('kpi-free-rooms').textContent = `${freeRooms} Zimmer Frei`;
 
   document.getElementById('current-day-label').textContent = `Datum: ${date}`;
 
-  // Populate Floor Buttons if not yet created
+  // Populate Floor Buttons
   const floorContainer = document.getElementById('floor-buttons');
-  if (floorContainer.querySelectorAll('.floor-btn').length === 0) {
+  if (floorContainer && floorContainer.querySelectorAll('.floor-btn').length === 0) {
     const allBtn = document.createElement('button');
     allBtn.className = 'floor-btn active';
     allBtn.dataset.floor = 'ALL';
@@ -220,6 +252,7 @@ function setFloorFilter(floor) {
 
 function renderHousekeepingTable(opData) {
   const tbody = document.getElementById('drawer-table-body');
+  if (!tbody) return;
   tbody.innerHTML = '';
 
   const filtered = opData.housekeeping.filter(item => {
@@ -248,7 +281,9 @@ function renderOccupancyChart() {
   const dates = globalParsedData.dates;
   const occupancies = dates.map(d => getOperationsDataForDate(globalParsedData.rooms, d).occupancyPct);
 
-  const ctx = document.getElementById('occupancyChart').getContext('2d');
+  const canvas = document.getElementById('occupancyChart');
+  if (!canvas) return;
+  const ctx = canvas.getContext('2d');
   if (occupancyChartInstance) occupancyChartInstance.destroy();
 
   occupancyChartInstance = new Chart(ctx, {
@@ -301,9 +336,11 @@ function init() {
 
     globalParsedData = parseAssdCalendar(res.assd_table_html);
     const syncTime = res.assd_last_sync ? new Date(res.assd_last_sync).toLocaleTimeString() : 'Gerade eben';
-    document.getElementById('sync-status').textContent = `Letzter Abgleich: ${syncTime}`;
+    const syncEl = document.getElementById('sync-status');
+    if (syncEl) syncEl.textContent = `Letzter Abgleich: ${syncTime}`;
 
     const nav = document.getElementById('date-buttons');
+    if (!nav) return;
     nav.innerHTML = '';
     globalParsedData.dates.forEach((d, idx) => {
       const b = document.createElement('button');
@@ -317,15 +354,16 @@ function init() {
       nav.appendChild(b);
     });
 
-    const defaultDate = globalParsedData.dates[1] || globalParsedData.dates[0];
-    document.querySelectorAll('.date-btn')[1]?.classList.add('active');
+    const defaultDate = globalParsedData.dates[0];
+    const firstBtn = nav.querySelector('.date-btn');
+    if (firstBtn) firstBtn.classList.add('active');
 
     renderDashboard(defaultDate);
     renderOccupancyChart();
   });
 }
 
-document.getElementById('btn-toggle-drawer').addEventListener('click', (e) => {
+document.getElementById('btn-toggle-drawer')?.addEventListener('click', (e) => {
   const drawer = document.getElementById('detail-drawer');
   const isOpen = drawer.classList.toggle('open');
   e.target.textContent = isOpen 
@@ -333,7 +371,7 @@ document.getElementById('btn-toggle-drawer').addEventListener('click', (e) => {
     : '📋 Zimmerliste & Housekeeping-Plan anzeigen';
 });
 
-document.getElementById('btn-print').addEventListener('click', () => {
+document.getElementById('btn-print')?.addEventListener('click', () => {
   const drawer = document.getElementById('detail-drawer');
   drawer.setAttribute('data-print-date', activeDate || '');
   window.print();
