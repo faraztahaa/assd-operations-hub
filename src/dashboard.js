@@ -30,11 +30,13 @@ function parseAssdCalendar(htmlString) {
         const divStyle = (bookingDiv?.getAttribute('style') || '').toLowerCase();
         const divClass = (bookingDiv?.getAttribute('class') || '').toLowerCase();
 
-        // 1. Blocked room detection (Black color #000000 / rgb(0,0,0) or Sperre)
-        const isBlocked = divStyle.includes('#000000') || 
-                          divStyle.includes('rgb(0, 0, 0)') || 
-                          divStyle.includes('background: black') ||
-                          divClass.includes('sperr');
+       // MATCH ONLY BACKGROUND COLOR (ignores text color: #000000)
+const isBlocked = divStyle.includes('background-color: #000000') ||
+                  divStyle.includes('background-color:#000000') ||
+                  divStyle.includes('background-color: rgb(0, 0, 0)') ||
+                  divStyle.includes('background: #000000') ||
+                  divStyle.includes('background: black') ||
+                  divClass.includes('sperr');
 
         // 2. Continued Bleibe on Day 1 (ASSD injects .l-zigzag)
         const hasZigzag = cell.querySelector('.l-zigzag') !== null;
